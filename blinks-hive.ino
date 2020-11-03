@@ -4,7 +4,8 @@ void setup() {}
 
 union FaceValue {
   struct {
-    byte unused : 7;
+    byte unused : 6;
+    bool handler : 1;
     bool in_game : 1;
   };
 
@@ -13,6 +14,8 @@ union FaceValue {
 
 static bool in_game_;
 static bool connected_[FACE_COUNT];
+static bool handled_faces_[FACE_COUNT];
+static byte handler_face_ = FACE_COUNT;
 
 void loop() {
   // Update connection state.
@@ -21,11 +24,13 @@ void loop() {
     if (isValueReceivedOnFaceExpired(face)) {
       // It does not look like this face is connected.
       connected_[face] = false;
+      handled_faces_[face] = false;
+      handler_face_ = FACE_COUNT;
     } else {
       // Face seems to be connected.
       alone = false;
 
-      // Parce incoming face value.
+      // Parse incoming face value.
       FaceValue face_value;
       face_value.as_byte = getLastValueReceivedOnFace(face);
 
@@ -34,6 +39,13 @@ void loop() {
         // in game.
         in_game_ = true;
         connected_[face] = true;
+        if (handler_face_ != FACE_COUNT) {
+          handler_face_ = face;
+        }
+      }
+
+      if (face_value.handler) {
+        handled_faces_[face] = true;
       }
     }
   }
@@ -74,10 +86,16 @@ void loop() {
     }
   }
 
-  // Publish our in game status.
-  FaceValue face_value;
-  face_value.in_game = in_game_;
-  setValueSentOnAllFaces(face_value.as_byte);
+  FOREACH_FACE(face) {
+    // Publish our in game status.
+    FaceValue face_value;
+    face_value.in_game = in_game_;
+    if (face == handler_face_) {
+      face_value.handler = true;
+    }
+
+    setValueSentOnFace(face_value.as_byte, face);
+  }
 
   // Consume any pending wake status.
   hasWoken();
